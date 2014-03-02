@@ -1,0 +1,223 @@
+package tracker;
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.Map;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.Socket;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+
+public class Peer {
+
+
+	private String peerIP;
+	private String peerID;
+	private int port;
+	private Socket socket;
+	private DataOutputStream out;
+	private DataInputStream in;
+	private boolean unchokedBoolean;
+	
+	@SuppressWarnings("rawtypes")
+	public Peer(Map map) {
+		StringBuilder IP = new StringBuilder();
+		ByteBuffer IPBuffer = (ByteBuffer) map.get(ToolKit.StringToByteBuffer("ip"));
+		byte[] IPBytes = IPBuffer.array();
+		for(int i = 0; i<IPBytes.length; i++){
+			IP.append((char)IPBytes[i]);
+		}
+		this.peerIP = IP.toString();
+		
+		StringBuilder ID = new StringBuilder();
+		ByteBuffer IDBuffer = (ByteBuffer) map.get(ToolKit.StringToByteBuffer("peer id"));
+		byte[] IDBytes = IDBuffer.array();
+		for(int i = 0; i<IDBytes.length; i++){
+			ID.append((char)IDBytes[i]);
+		}
+		this.peerID = ID.toString();
+		
+		int port = (Integer) map.get(ToolKit.StringToByteBuffer("port"));
+		this.port = port;
+	}
+	public String getPeerID(){
+		return this.peerID;
+	}	
+	public String getPeerIP(){
+		return this.peerIP;
+	}
+	public int getPort(){
+		return this.port;
+	}
+	
+	void connect() throws UnknownHostException, IOException, InterruptedException{
+
+		//1+19+8+20+20 bytes in a handshake
+		byte[] handshakeMessage = new byte[68];
+		int index = 0;
+		//first byte is 0
+		handshakeMessage[index] = 19;
+		index++;
+		//'BitTorrent protocol' string
+		
+		for(int i = 0; i<19; i++){
+			handshakeMessage[index] = (byte) "BitTorrent protocol".charAt(i);
+			index++;
+		}
+		
+		//8 '0's
+		for(int i = 0; i<8; i++){
+			handshakeMessage[index] = 0;
+			index++;
+		}
+		//20-byte torrent info hash
+		for(int i = 0; i<20; i++){
+			handshakeMessage[index] = Download.torrent.info_hash.get(i);
+			index++;
+		}
+		//20-byte peer ID
+		for(int i = 0; i<20; i++){
+			handshakeMessage[index] = (byte) Download.localPeerID.charAt(i);	
+			index++;
+		}
+
+		System.out.print("\nHandshake message: ");
+		ToolKit.printMessage(handshakeMessage);
+		System.out.print("\nReply message:     ");
+		this.socket = new Socket(this.getPeerIP(), this.getPort());
+	    //BufferedOutputStream out = new BufferedOutputStream(echoSocket.getOutputStream());
+		
+		this.out = new DataOutputStream(socket.getOutputStream());
+	    out.write(handshakeMessage);
+	    this.in = new DataInputStream(socket.getInputStream());
+	    byte[] responseHandshake = new byte[68];
+
+	    byte[] interested = {0, 0, 0, 1, 2};
+	    in.read(responseHandshake, 0, 68);
+		ToolKit.printMessage(responseHandshake);
+		System.out.println();
+		
+		byte[] bitfieldResponse = new byte[10];
+		in.read(bitfieldResponse);
+		ToolKit.printMessage(bitfieldResponse);
+		
+	    System.out.println("\n\nwrote interested");
+	    ToolKit.printMessage(interested);
+		out.write(interested);
+
+	    byte[] responseMessage = new byte[5];
+	    Thread.sleep(1000);
+	    System.out.println("\nAwaiting an unchoke response");
+	    byte[] unchoked = {0, 0, 0, 1, 1};
+	    
+	    unchokedBoolean = false;
+	    
+	    while(unchokedBoolean == false){
+	    	
+	    	in.read(responseMessage, 0, 5);
+	    	
+		    if (Arrays.equals(responseMessage, unchoked)){
+		    	System.out.println("SWAAAAGGGGG ITS UNCHOKED");
+		    	unchokedBoolean = true;
+		    }else{
+		    	unchokedBoolean = false;
+		    }
+	    }
+	    
+	    ToolKit.printMessage(responseMessage);
+	    System.out.println();
+	  	
+	}
+	
+	public byte[] getPiece(int pieceNumber) throws InterruptedException, IOException{
+		
+	    int length = Download.torrent.piece_length;
+	    int short_length = length/2;
+
+	    byte[] request = new byte[17];
+	    //request = {0,0,0,13,     6,     0,0,0,0,    0,0,0,0};
+	    
+	    System.out.println();
+	    
+	    request[0] = 0;
+	    request[1] = 0;
+	    request[2] = 0;
+	    request[3] = 13;
+	    request[4] = 6;
+	    
+	    byte[] pNBytes = ByteBuffer.allocate(4).putInt(pieceNumber).array();
+	    //PieceNumberBytes
+	    
+	    request[5] = pNBytes[0]; request[6] = pNBytes[1]; request[7] = pNBytes[2]; request[8] = pNBytes[3];
+	    request[9] = 0; request[10] = 0; request[11] = 0; request[12] = 0;
+	    
+	    byte[] bytes = ByteBuffer.allocate(4).putInt(short_length).array();
+	    
+	    /*for (int i=0; i < bytes.length; i++){
+	    	System.out.println(bytes[i]);
+	    }*/
+	    
+	    request[13] = bytes[0];
+	    request[14] = bytes[1];
+	    request[15] = bytes[2];
+	    request[16] = bytes[3];
+	    System.out.println();
+
+	  	
+	    this.out.write(request);
+	  	Thread.sleep(1000);
+	  	
+	  	byte[] response = new byte[short_length + 13]; //first subpiece
+	  	in.read(response, 0, short_length+13);
+	  	ToolKit.printShortMessage(response);
+	  	byte[] piece = new byte[short_length];
+	  	
+	  	for(int i = 0; i < short_length; i++){
+	  		piece[i] = response[i+13];
+	  	}
+	  	
+	  	System.out.print("peer piece response: ");
+	  	ToolKit.printShortMessage(piece);
+	  	
+	  	//REQUEST FOR SECOND SUBPIECE
+	    request[9] = bytes[0]; request[10] = bytes[1]; request[11] = bytes[2]; request[12] = bytes[3];
+	  	this.out.write(request);
+	  	Thread.sleep(1000);
+	  	
+	  	byte[] response2 = new byte[short_length + 13]; //second subpiece
+	  	in.read(response2, 0, short_length+13);
+	  	ToolKit.printShortMessage(response2);
+	  	byte[] piece2 = new byte[short_length];
+	  	
+	  	for(int i = 0; i<short_length; i++){
+	  		piece2[i] = response2[i+13];
+	  	}
+	  	
+	  	//appending piece2 byte array to piece1 byte array
+	  	byte[] finalPiece = new byte[piece.length + piece2.length];
+	  	System.arraycopy(piece, 0, finalPiece, 0, piece.length);
+	  	System.arraycopy(piece2, 0, finalPiece, piece.length, piece2.length);
+	  	
+		MessageDigest digest;
+		
+		try {
+			
+			digest = MessageDigest.getInstance("SHA1");
+			byte[] pieceHash = digest.digest(finalPiece);
+			ToolKit.printMessage(pieceHash);
+			
+		} catch (NoSuchAlgorithmException e) {
+			e.printStackTrace();
+		}
+		
+		
+		
+		
+		
+		return piece;
+		
+	}
+};
