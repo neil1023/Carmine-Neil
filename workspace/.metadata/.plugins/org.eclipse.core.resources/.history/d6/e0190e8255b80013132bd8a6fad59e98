@@ -1,0 +1,78 @@
+package tracker;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
+public class OurTools extends ToolKit{
+
+	/**
+	 * Takes a string, returns a byte buffer of that string.
+	 * 
+	 * @param input
+	 * @return
+	 */
+	public static ByteBuffer StringToByteBuffer(String input){
+		byte[] inputBytes = new byte[input.length()];
+		
+		for(int i = 0; i<input.length(); i++){
+			inputBytes[i] = (byte) input.charAt(i);
+		}
+		return ByteBuffer.wrap(inputBytes);
+	}
+	
+
+	/**
+	 * This method simply take the byte[] messsage and prints out the bytes in
+	 * hexadecimal format. In order to display larger byte arrays, it will use
+	 * a '.....' to have it so the beginning and ending bytes are displayed. It will
+	 * only do this shortening if the parameter 'shorten' is set to true.
+	 * @param message
+	 * @param shorten
+	 */
+	public static void printMessage(byte[] message, int shorten){
+		
+		if (message == null){
+			System.out.println("Message is null");
+			return;
+		}
+		for(int i = 0; i<message.length; i++){
+			if(shorten != 0){
+				if(i<shorten){
+					System.out.print(String.format("%02x", message[i])+ " ");					
+				}
+				if(i == shorten){
+					System.out.print(".....");
+				}
+				if(i>message.length-shorten){
+					System.out.print(String.format("%02x", message[i])+ " ");
+				}
+			} else{
+				System.out.print(String.format("%02x", message[i])+ " ");
+			}
+		}
+		System.out.println();
+	}
+	
+	/**
+	 * This method is used to print out the entire byte array rather than just a shortened version
+	 * of that byte array. It will do this by calling printMessage with the second parameter being false.
+	 * @param message
+	 */
+	public static void printMessage(byte[] message){
+		
+		printMessage(message, 0);
+		
+	}
+	
+	public static void fileLength(){
+		
+		try {
+			System.out.println("file length: " + Download.outputFile.length());
+		} catch (Exception e) {
+			System.out.println("help");
+		}
+	}
+	
+	
+
+}

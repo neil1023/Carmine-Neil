@@ -1,0 +1,322 @@
+package tracker;
+
+import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
+//import ex.proj2.Peer;
+
+
+/**
+ * 
+ * This class contains various fields. It will read the .torrent file and load the bytes of
+ * the .torrent file into a TorrentInfo object named torrent.
+ * It will also create Bitfield message depending on the pieces that have been downloaded already.
+ * Also creates a Peer object for one peer. Calls functions on the Peer object to properly form
+ * connections with that peer and obtain pieces of the file from that peer. 
+ * @author Neil Patel
+ *
+ */
+public class Download {
+	
+	public static File torrentFile;
+	public static TorrentInfo torrent;
+	public static RandomAccessFile outputFile;
+	public byte[] bitfield; //TODO: consider boolean[]
+	public static byte[] localPeerID = { 'G', 'R', 'O', 'U', 'P', '9', ' ', ' ',
+		' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
+	public static ArrayList<Map> peers;
+	//public static List<Peer> peers = Collections.synchronizedList(new LinkedList<Peer>());
+	private boolean complete;
+	
+	/**
+	 * Reading in .torrent file and loading the bytes of the .torrent file into the TorrentInfo
+	 * object 'torrent'. Formed the Bitfield message. Creates Tracker object where it forms a 
+	 * connection to the actual peer. 
+	 * @param torrentFile
+	 * @param outputFile
+	 */
+	public Download(File torrentFile, RandomAccessFile outputFile){
+
+		this.torrentFile = torrentFile;
+		this.complete = false;
+		this.outputFile = outputFile;
+
+	}
+	
+	public void run(){
+<<<<<<< HEAD
+		
+		OurTools.fileLength();
+
+		for(int i = 6; i < 20; i++){
+			Download.localPeerID[i] = (byte)(Math.random()*25 + 'a');
+		}
+		
+=======
+
+
+>>>>>>> 7d8cdd535c1d21079e063658f4c60ffe11b9b3d1
+		DataInputStream torrentFileIS;
+		byte[] torrent_file_bytes = new byte[(int) torrentFile.length()];
+		
+		try{
+			DataInputStream torrentInput = new DataInputStream(new FileInputStream(torrentFile));
+			torrentInput.readFully(torrent_file_bytes);
+			
+			torrentInput.close();		
+		} catch(IOException e){
+			e.printStackTrace();
+		}
+<<<<<<< HEAD
+		
+		OurTools.fileLength();
+		
+=======
+
+>>>>>>> 7d8cdd535c1d21079e063658f4c60ffe11b9b3d1
+		//make the TorrentInfo data structure, connect to the server
+		try {
+			
+			this.torrent = new TorrentInfo(torrent_file_bytes);
+			torrentFileIS = new DataInputStream(new FileInputStream(torrentFile));
+			torrentFileIS.readFully(torrent.torrent_file_bytes);
+			torrentFileIS.close();
+
+			bitfield = new byte[torrent.piece_hashes.length];
+			outputFile.setLength(torrent.file_length);
+
+			checkBitfield();
+
+			if(!this.complete){
+
+				System.out.println("Downloading...");
+				for(int i = 6; i < 20; i++){
+					Download.localPeerID[i] = (byte)(Math.random()*25 + 'a');
+				}
+				Tracker tracker = new Tracker(this.torrent);
+				tracker.announce(0, 0, torrent.file_length, "started");
+				Peer peer = null;
+				System.out.println("number of peers: " + peers.size());
+				
+				for(int i= 0; i < peers.size(); i++){
+					
+					//System.out.println(peers.get(i).getPeerIP());
+					peer = new Peer(peers.get(i));
+					System.out.println("Something's happening");
+					if(peer.getPeerID().contains("-RU")){
+						peer.connect();
+						break;
+					}
+				
+				}
+				
+				try {
+<<<<<<< HEAD
+					// TODO: multi-threading problem
+					//peer.connect();
+=======
+>>>>>>> 7d8cdd535c1d21079e063658f4c60ffe11b9b3d1
+					
+					for(int i = 0; i < torrent.piece_hashes.length; i++){
+						
+						if(bitfield[i] == 0){
+							byte[] piece = peer.getPiece(i);
+							writePieceNumber(i, piece);
+							checkBitfield();
+						}
+
+					}
+					
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				peer.disconnect();
+				
+			}
+<<<<<<< HEAD
+			
+			System.out.println("File length: "+ outputFile.length());
+=======
+>>>>>>> 7d8cdd535c1d21079e063658f4c60ffe11b9b3d1
+			outputFile.close();
+		
+		}
+		
+		catch (BencodingException bene) {
+			bene.printStackTrace();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			System.out.println("Server connection error: ");
+			e.printStackTrace();
+		}catch(Throwable t){
+			System.out.println("fuuuuuuuuuuuuuuck");
+			t.printStackTrace();
+		}
+		
+	}
+	
+	/**
+	 * Creates the bitfield message. Checks to see if there are any pieces downloaded
+	 * already. Sets the byte equal to 1 if the piece is downloaded and sets the byte
+	 * to 0 if it isn't downloaded.
+	 */
+	private void checkBitfield() {
+		this.complete = true;
+		for(int i = 0; i<torrent.piece_hashes.length; i++){
+			
+			if(downloadedPiece(i)){
+				bitfield[i] = 1;
+			}else{
+				bitfield[i] = 0;
+				this.complete = false;
+			
+			}
+		}
+		
+		System.out.println("Local bitfield:");
+		
+		for(int i = 0; i < torrent.piece_hashes.length; i++){
+			System.out.print(this.bitfield[i]);
+		}
+		System.out.println();		
+	}
+
+	/**
+	 * The two parameters are the index for a piece and the pieceBytes from the actual file. The pieceBytes
+	 * were returned by the request message. They are then hashed and stored into a byte array called pieceHash.
+	 * pieceHash is then compared against the hash of the same piece stored within the TorrentInfo object torrent.
+	 * If they match up, then pieceBytes is valid and can be written to the RandomAccessFile outputFile. If they
+	 * did not match up, then we do not write the RandomAccessFile outputFile.
+	 * @param piece
+	 * @param pieceBytes
+	 */
+	private void writePieceNumber(int piece, byte[] pieceBytes) {
+		
+		byte[] torrentFileHash = new byte[20];
+
+		torrent.piece_hashes[piece].duplicate().get(torrentFileHash);
+	
+		MessageDigest digest;
+		try {
+			digest = MessageDigest.getInstance("SHA1");
+			byte[] pieceHash = digest.digest(pieceBytes);
+			System.out.println("Attempting to write piece " + piece + " to address " + piece*torrent.piece_length + " for " + pieceBytes.length + " bytes");
+
+			if(Arrays.equals(pieceHash, torrentFileHash)){
+
+				outputFile.seek(piece*torrent.piece_length);
+
+					outputFile.write(pieceBytes);
+					
+					byte[] checkBytes = new byte[torrent.piece_length];
+					outputFile.read(checkBytes);
+
+					//ToolKit.printMessage(checkBytes, true);
+			}
+			else{
+				System.out.println("you didn't do it!");
+				System.out.print("your bytes were: ");
+				OurTools.printMessage(pieceBytes, 25);
+
+			}
+		} catch (NoSuchAlgorithmException e) {
+			e.printStackTrace();
+		}catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	/**
+	 * The parameter piece provides us with the piece index. We then take this and seek the RandomAccessFile
+	 * outputFile for the bytes of that certain piece. We take these bytes for this specific piece and hash it.
+	 * We then retrieve the hash from TorrentInfo object torrent for the same piece. We compare the hashes together
+	 * and see if they match up. If they do indeed match up, then we return true. Otherwise, we return false. This
+	 * is used in the checkBitfield method.
+	 * @param piece
+	 * @return
+	 */
+	public boolean downloadedPiece(int piece){
+		
+		byte[] pieceBytes;
+		
+		if(piece != torrent.piece_hashes.length-1){
+			pieceBytes = new byte[torrent.piece_length];
+			try{
+				outputFile.seek(piece*torrent.piece_length);
+				outputFile.readFully(pieceBytes);
+			} catch(IOException e){
+				e.printStackTrace();
+			}
+		}
+		else{
+			pieceBytes = new byte[torrent.file_length - piece*(torrent.piece_length)];
+			try {
+				outputFile.seek(piece*(torrent.piece_length-1));
+				outputFile.readFully(pieceBytes);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		//read the torrent file into a byte array
+		try {
+			outputFile.seek(piece*torrent.piece_length);
+			outputFile.readFully(pieceBytes);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+			
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA1");
+			byte[] pieceHash = digest.digest(pieceBytes);
+			if(RUBTClient.DEBUG){
+				System.out.println("bytes in file:");
+				OurTools.printMessage(pieceBytes, 20);
+				System.out.println("Piece " + piece + " hash of length " + torrent.piece_length);
+				OurTools.printMessage(pieceHash);
+				OurTools.printMessage(torrent.piece_hashes[piece].array());
+			}
+			
+			byte[] torrentFileSourceHash = new byte[20];
+			torrent.piece_hashes[piece].duplicate().get(torrentFileSourceHash);
+
+			//System.out.print("Piece " + piece + " hash: ");
+			//ToolKit.printMessage(torrentFileSourceHash);
+			
+			return Arrays.equals(pieceHash, torrentFileSourceHash);
+		} catch (NoSuchAlgorithmException e) {
+			e.printStackTrace();
+		}
+		return false;
+	}
+	
+	/**
+	 * This simply checks to see if all the bytes in the bitfield message are set to 1.
+	 * If they are all set to 1, then the file has been downloaded and there is no need to download
+	 * the file.
+	 * @return
+	 */
+	public boolean checkIfFinished(){
+		
+		for(int i = 0; i < bitfield.length; i++){
+			if (bitfield[i] == 0){
+				return false;
+			}
+		}
+		return true;
+		
+	}
+}

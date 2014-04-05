@@ -1,0 +1,65 @@
+package tracker;
+
+import java.io.*;
+import java.net.*;
+import java.nio.ByteBuffer;
+import java.io.RandomAccessFile;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.ArrayList;
+
+/**
+ * RUBTClient simply reads in the arguments and verifies that they are valid. They
+ * are sent in an as parameters to the Download object that is created.
+ * @author Neil Patel
+ *
+ */
+public class RUBTClient {
+	
+	/**
+	 * This field is later used in the Tracker class to help build the request URL.
+	 * The prefix is set to our group name (GROUP9) and randomized characters after that.
+	 * It is a total 20 bytes.
+	 */
+	public static String localPeerID;
+	
+	/**
+	 * Does a check for the correct number of arguments.
+	 * Creates a file object and a RandomAccessFile object and passes them both into
+	 * a Download object. 
+	 * @param args
+	 */
+	public static void main(String[] args){
+		System.out.println("Running:");
+		if(args.length != 2){
+			System.out.println("Wrong number of arguments!");
+			return;
+		}
+		
+		File torrentFile = new File(args[0]);
+		
+		if (!torrentFile.exists()){
+				System.out.println("Error: Torrent file does not exist.");
+				return;
+		}
+				
+		try {
+			
+			RandomAccessFile outputFile = new RandomAccessFile(args[1], "rw");
+			OurTools.fileLength();
+			Download download = new Download(torrentFile, outputFile);
+			download.run();
+			
+			if(download.checkIfFinished() ==true){
+				System.out.println("\nFile is complete!");
+			}
+		} catch (FileNotFoundException e1) {
+			e1.printStackTrace();
+		}
+		
+	}
+
+}
+

@@ -1,0 +1,134 @@
+package ex.proj2;
+
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+import edu.rutgers.cs.cs352.bt.exceptions.BencodingException;
+import edu.rutgers.cs.cs352.bt.util.Bencoder2;
+import edu.rutgers.cs.cs352.bt.util.OurTools;
+
+/**
+ * @author Robert Moore
+ *
+ */
+public class Tracker {
+	private final byte[] infoHash;
+	private final byte[] clientId;
+	private final String announceUrl;
+	private final int port;
+
+	private int interval = 60;
+
+	/**
+	 * Creates a new Tracker interface object.
+	 * @param clientId the local client's peer id
+	 * @param infoHash the torrent's info hash
+	 * @param announceUrl the announce URL of the tracker
+	 * @param port the listen port for the local client.
+	 */
+	public Tracker(final byte[] clientId, final byte[] infoHash, final String announceUrl, final int port){
+		this.infoHash = infoHash;
+		this.clientId = clientId;
+		this.announceUrl = announceUrl;
+		this.port = port;
+	}
+
+	/**
+	 * Perform a tracker announce with the provided parameters
+	 * @param downloaded the number of bytes downloaded in this torrent
+	 * @param uploaded the number of bytes uploaded in this torrent
+	 * @param left the number of bytes remaining in the file
+	 * @param event the announce event (optional)
+	 * @return the returned list of peers, or {@code null} if an error occurred.
+	 */
+	public List<Peer> announce(int downloaded, int uploaded, int left, String event){
+	  	StringBuilder request = new StringBuilder(this.announceUrl);
+    	request.append("?peer_id=");
+    	
+    	for(int i = 0; i<20; i++){
+    		request.append((char)clientId[i]);
+    	}
+    	
+    	request.append("&info_hash=");
+		
+		for (int i = 0; i < 20; i++){
+			request.append("%" + String.format("%02x", this.infoHash[i]));
+		}
+		
+		request.append("&left=" + left);
+		request.append("&uploaded=" + uploaded);
+		request.append("&downloaded=" + downloaded);
+		request.append("&event=" + event);
+		StringBuilder response = new StringBuilder();
+		System.out.println(request);
+		
+		try{
+			
+			URL trackerURL = new URL(request.toString());
+			HttpURLConnection connection = (HttpURLConnection)trackerURL.openConnection();
+		 	System.out.println("Server response: " + connection.getResponseMessage());
+			
+			while(connection.getInputStream().available() > 0){
+				response.append((char)connection.getInputStream().read());
+			}
+		
+			System.out.println("Response dictionary: " + response);
+			int a = response.toString().indexOf("interval");
+			a = "interval".length() + a + 1;
+			
+			String shortResponse = response.toString().substring(a);
+			String interval = shortResponse.substring(0, shortResponse.indexOf('e'));
+			this.interval = Integer.parseInt(interval);
+			
+			System.out.println();
+			connection.disconnect();
+		
+		} catch(MalformedURLException mue){
+			mue.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		int peerindex = response.indexOf("peers");
+
+		String peersList = response.substring(peerindex + 5);
+		//make a byte array for the server's response and copy it over
+		byte[] response_bytes = new byte[response.length()];
+		
+		for(int i = 0; i < peersList.length(); i++){
+			response_bytes[i] = (byte)peersList.charAt(i);
+		}
+		
+		try{
+			//take the bencoded server's response, and turn it into an object.
+			@SuppressWarnings("rawtypes")
+			//List<Peer> peers = (List<Peer>)Bencoder2.decode(response_bytes);
+			
+			return peers;
+
+		} catch(BencodingException be){
+			be.printStackTrace();
+		}
+		return null;
+
+	}
+
+	/**
+	 * Get the latest "interval" value from the tracker.
+	 * @return the latest returned "interval" value
+	 */
+	public int getInterval() {
+		return this.interval;
+	}
+	
+	
+}

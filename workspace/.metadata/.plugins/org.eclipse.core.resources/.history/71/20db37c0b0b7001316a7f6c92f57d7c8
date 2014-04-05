@@ -1,0 +1,113 @@
+package tracker;
+
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Map;
+
+/**
+ * Tracker helps create the connection between the client and the remote peer.
+ * @author Neil Patel
+ *
+ */
+public class Tracker {
+
+	/**
+	 * Calls makeServerConnection which connects the client with the remote peer's socket.
+	 * @param torrent
+	 */
+	public Tracker(TorrentInfo torrent){
+			try {
+				makeServerConnection(torrent);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		
+	}
+	
+	/**
+	 * This method creates a URL that is used to open the connection. This method creates the
+	 * peer ID for the client.
+	 * @param torrent
+	 * @return
+	 */
+	public static String buildRequestURL(TorrentInfo torrent){
+		StringBuilder peerID = new StringBuilder("GROUP9");
+		
+		for(int i = 0; i<14; i++){
+			peerID.append((char)('a' + 25*Math.random()));
+		}
+		
+		Download.localPeerID = { 'E', 'x', 'a', 'm', 'p', 'l', 'e', ' ', 'C',
+			      'l', 'i', 'e', 'n', 't', ' ', 'P', 'r', 'o', 'j', '2' };
+		
+		StringBuilder request = new StringBuilder(torrent.announce_url.toString()).append("?");		
+		request.append("peer_id=");
+		request.append(Download.localPeerID);
+		
+		request.append("&info_hash=");
+		
+		for (int i = 0; i < 20; i++){
+			String currentByte = (String.format("%02x", torrent.info_hash.get(i)));
+			request.append("%" + currentByte);
+		}
+
+		request.append("&uploaded=0");
+		request.append("&downloaded=0");
+		request.append("&left=").append(torrent.file_length);
+		
+		System.out.println("\nServer request:  " + (request));
+		return request.toString();
+	}
+	
+	/**
+	 * We form the HttpURLConnection using the URL we built in the buildRequestURL method.
+	 * We then do some slight parsing of the .torrent file to retrieve the peers list and
+	 * store the list within an ArrayList made up of Map's.
+	 * @param torrent
+	 * @throws IOException
+	 */
+    @SuppressWarnings("unchecked")
+	private static void makeServerConnection(TorrentInfo torrent) throws IOException{
+		String request = buildRequestURL(torrent);
+		StringBuilder response = new StringBuilder();
+		try{
+			URL trackerURL = new URL(request);
+			HttpURLConnection connection = (HttpURLConnection)trackerURL.openConnection();
+		 	System.out.println("Server response: " + connection.getResponseMessage());
+			
+			while(connection.getInputStream().available() > 0){
+				response.append((char)connection.getInputStream().read());
+			}
+			System.out.println("Response dictionary: " + response);
+			System.out.println();
+			connection.disconnect();
+		}
+		catch(MalformedURLException mue){
+			mue.printStackTrace();
+		}
+
+		int peerindex = response.indexOf("peers");
+
+		String peersList = response.substring(peerindex + 5);
+		//make a byte array for the server's response and copy it over
+		byte[] response_bytes = new byte[response.length()];
+		
+		for(int i = 0; i < peersList.length(); i++){
+			response_bytes[i] = (byte)peersList.charAt(i);
+		}
+		
+		try{
+			//take the bencoded server's response, and turn it into an object.
+			@SuppressWarnings("rawtypes")
+			ArrayList<Map> peers = ((ArrayList<Map>)Bencoder2.decode(response_bytes));
+			Download.peers = peers;
+
+		} catch(BencodingException be){
+			be.printStackTrace();
+		}
+		
+	}
+}

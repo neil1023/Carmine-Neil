@@ -1,0 +1,100 @@
+package tracker;
+
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Tracker helps create the connection between the client and the remote peer.
+ * @author Neil Patel
+ *
+ */
+public class Tracker {
+
+	
+	private final byte[] infoHash;
+	private final byte[] clientId;
+	private final String announceUrl;
+	private final int port;
+	  
+	private int interval = 60;
+
+	public Tracker(TorrentInfo torrent){
+		this.infoHash = torrent.info_hash.array();
+		this.clientId = Download.localPeerID;
+		this.announceUrl = torrent.announce_url.toString();
+		this.port = 6881;
+		//TODO implement port number checking
+	}
+	
+    @SuppressWarnings("unchecked")
+
+	public void announce(int downloaded, int uploaded, int left, String event){
+    	
+    	StringBuilder request = new StringBuilder(this.announceUrl);
+    	request.append("?peer_id=");
+    	
+    	for(int i = 0; i<20; i++){
+    		request.append((char)Download.localPeerID[i]);
+    	}
+    	
+    	request.append("&info_hash=");
+		
+		for (int i = 0; i < 20; i++){
+			request.append("%" + String.format("%02x", this.infoHash[i]));
+		}
+		
+		request.append("&left=" + left);
+		request.append("&uploaded=" + uploaded);
+		request.append("&downloaded=" + downloaded);
+		request.append("&event="+event);
+		StringBuilder response = new StringBuilder();
+		System.out.println(request);
+		
+		try{
+			
+			URL trackerURL = new URL(request.toString());
+			HttpURLConnection connection = (HttpURLConnection)trackerURL.openConnection();
+		 	System.out.println("Server response: " + connection.getResponseMessage());
+			
+			while(connection.getInputStream().available() > 0){
+				response.append((char)connection.getInputStream().read());
+			}
+		
+			System.out.println("Response dictionary: " + response);
+			System.out.println();
+			connection.disconnect();
+		
+		} catch(MalformedURLException mue){
+			mue.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		int peerindex = response.indexOf("peers");
+
+		String peersList = response.substring(peerindex + 5);
+		//make a byte array for the server's response and copy it over
+		byte[] response_bytes = new byte[response.length()];
+		
+		for(int i = 0; i < peersList.length(); i++){
+			response_bytes[i] = (byte)peersList.charAt(i);
+		}
+		
+		try{
+			//take the bencoded server's response, and turn it into an object.
+			@SuppressWarnings("rawtypes")
+			ArrayList<Map> peers = ((ArrayList<Map>)Bencoder2.decode(response_bytes));
+			Download.peers = peers;
+
+		} catch(BencodingException be){
+			be.printStackTrace();
+		}
+		
+	}
+}

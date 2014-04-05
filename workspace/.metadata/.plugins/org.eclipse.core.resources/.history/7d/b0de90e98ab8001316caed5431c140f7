@@ -1,0 +1,601 @@
+package tracker;
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.Map;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.Socket;
+import java.net.SocketException;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+
+/**
+ * Peer stores numerous values for a peer that a client would like to connect to.
+ * It contains fields for IP, ID, port, the socket used to connect with the peer,
+ * DataInputStream, DataOutputStream, and a boolean flag to check if the remote peer
+ * is choking the client. All these fields will be filled and later used throughout all the files.
+ * @author Neil Patel
+ *
+ */
+
+public class Peer extends Thread{
+
+	/**
+	 * Stores the IP address of a remote peer.
+	 */
+	//should be byte[]
+	private String peerIP;
+	
+	public int pieceDesired;
+	
+	/**
+	 * Stores the ID of a remote peer.
+	 */
+	private byte[] peerID;
+	
+	/**
+	 * Stores the port number of a remote peer.
+	 */
+	private int port;
+	
+	/**
+	 * This is the socket used to connect to the remote peer.
+	 * Uses the peerIP and peerID fields to correctly initialize the socket.
+	 */
+	private Socket socket;
+	
+	/**
+	 * This is the DataOutputStream used to send data from the client's socket to the
+	 * remote peer's socket.
+	 */
+	private DataOutputStream out;
+	
+	/**
+	 * This is the DataInputStream used to receive data from the remote peer's socket into
+	 * the client's socket.
+	 */
+	private DataInputStream in;
+	
+	/**
+	 * This boolean will be used to determine if the remote peer is currently choking us.
+	 * If the remote peer is choking us, the client will not be able to send a request message.
+	 */
+	private boolean chokingUs;
+	
+	/**
+	 * Sending in a Map object as an argument from the Download class's constructor (where it is called).
+	 * The map contains the info from from .torrent file of the peer. In this constructor, we are
+	 * parsing up the map and placing the data within the fields of this class (e.g. peerIP, peerID).
+	 * @param map
+	 */
+	private boolean[] bitfield;
+	
+	@SuppressWarnings("rawtypes")
+	public Peer(Map map) {
+		StringBuilder IP = new StringBuilder();
+		ByteBuffer IPBuffer = (ByteBuffer) map.get(OurTools.StringToByteBuffer("ip"));
+		byte[] IPBytes = IPBuffer.array();
+		for(int i = 0; i<IPBytes.length; i++){
+			IP.append((char)IPBytes[i]);
+		}
+		
+		this.peerIP = IP.toString();
+		
+		StringBuilder ID = new StringBuilder();
+		ByteBuffer IDBuffer = (ByteBuffer) map.get(OurTools.StringToByteBuffer("peer id"));
+		byte[] IDBytes = IDBuffer.array();
+		for(int i = 0; i<IDBytes.length; i++){
+			ID.append((char)IDBytes[i]);
+		}
+		this.peerID = ID.toString().getBytes();
+		
+		int port = (Integer) map.get(OurTools.StringToByteBuffer("port"));
+		this.port = port;
+		this.bitfield = new boolean[Download.torrent.piece_hashes.length];
+		for(int i = 0; i < this.bitfield.length; i++){
+			bitfield[i] = false;
+		}
+	}
+	
+	/**
+	 * returns the class's peerID
+	 * @return
+	 */
+	public String getPeerID(){
+		StringBuilder ID = new StringBuilder();
+		for(int i = 0; i<this.peerID.length; i++){
+			ID.append((char)this.peerID[i]);
+		}
+		return ID.toString();
+		
+	}	
+	
+	/**
+	 * returns the class's peerIP
+	 * @return
+	 */
+	public String getPeerIP(){
+		return this.peerIP;
+	}
+	
+	/**
+	 * returns the class's port
+	 * @return
+	 */
+	public int getPort(){
+		return this.port;
+	}
+	
+	public void run(){
+		try {
+			connect();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (NoSuchAlgorithmException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	/**
+	 * This method is where the messages start being sent to the remote peer. We create the handshake message
+	 * byte by byte using for loops. We then initialize the socket, DataInputStream, and DataOutputStream and
+	 * send the handshake message out. The client gets a response handshake message and the client continues 
+	 * to send an interested message to the remote peer. The remote peer can then send an unchoked message and
+	 * if it does in fact send an unchoked message, the client can then send request messages. If the remote
+	 * peer doesn't send an unchoked message, then the client will wait on the remote peer to send an unchoked message.
+	 * @throws IOException 
+	 * @throws UnknownHostException 
+	 * @throws NoSuchAlgorithmException 
+	 * @throws InterruptedException 
+	 */
+	public void connect() throws UnknownHostException, IOException, NoSuchAlgorithmException, InterruptedException{
+
+		//1+19+8+20+20 bytes in a handshake
+		byte[] handshakeMessage = new byte[68];
+		int index = 0;
+		//first byte is 0
+		handshakeMessage[index] = 19;
+		index++;
+		//'BitTorrent protocol' string
+		
+		for(int i = 0; i<19; i++){
+			handshakeMessage[index] = (byte) "BitTorrent protocol".charAt(i);
+			index++;
+		}
+		
+		//8 '0's
+		for(int i = 0; i<8; i++){
+			handshakeMessage[index] = 0;
+			index++;
+		}
+		
+		//20-byte torrent info hash
+		for(int i = 0; i<20; i++){
+			handshakeMessage[index] = Download.torrent.info_hash.get(i);
+			index++;
+		}
+		
+		//20-byte peer ID
+		for(int i = 0; i<20; i++){
+			handshakeMessage[index] = Download.localPeerID[i];	
+			index++;
+		}
+
+
+		System.out.print("Handshake message: ");
+		OurTools.printMessage(handshakeMessage);
+		
+		this.socket = new Socket(this.getPeerIP(), this.getPort());
+		
+		
+		
+		this.socket.setSoTimeout(0);
+		this.out = new DataOutputStream(socket.getOutputStream());
+		out.write(handshakeMessage);
+		
+		out.flush();
+		this.in = new DataInputStream(socket.getInputStream());
+	    
+		byte[] responseHandshake = new byte[68];
+	    
+	    byte[] interested = {0, 0, 0, 1, 2};
+	    System.out.print("Reply message:     ");
+
+	    
+		in.read(responseHandshake, 0, 68);
+	    
+	    //if handshake and server Peer IDs don't match
+	    System.out.println("Peer ID: " + this.getPeerID());
+	    
+	    for(int i = 0; i<20; i++){
+	    	if((char)responseHandshake[i+48] != this.getPeerID().charAt(i)){
+	    		System.out.println("Peer connection issue");
+	    		this.disconnect();
+	    		return;
+	    	}
+	    	
+	    }
+	    
+	    MessageDigest digest = null;
+		digest = MessageDigest.getInstance("SHA-1");
+		
+		digest.update(responseHandshake);
+		byte[] info_hash_of_response = digest.digest();
+	    
+		if (Arrays.equals(info_hash_of_response, Download.torrent.info_hash.array())){
+			System.out.println("Peer connection issue: info hashes do not match");
+	    }
+		boolean connected = true;
+		System.out.println("reading messages");
+		while(connected){			
+				
+			int length = this.in.readInt();
+			if(length == 0){
+				System.out.println("keep alive");
+				return;
+			}
+			
+			byte id = this.in.readByte();
+			if(length == 1){
+				//choking message
+				if(id == 0){
+					System.out.println("choking us");
+					this.chokingUs = true;
+				}
+				//unchoking message
+				else if(id == 1){
+					System.out.println("no longer choking us");
+					this.chokingUs = false;
+					this.getPiece(1);
+				}
+				//interested message
+				else if(id == 2){
+					System.out.println("interested in us");
+				}
+				//not interested message
+				else if(id == 3){
+					System.out.println("not interested in us");
+				}
+			}
+			//have message
+			else if(length == 5 && id == 4){
+				System.out.println("have = " + this.in.readInt());
+				
+			}
+			else{
+				if(id == 5){
+					System.out.println(in.available());
+
+					byte[] bitfieldBytes = new byte[length-1];
+					for(int i = 0; i<bitfieldBytes.length; i++){
+						bitfieldBytes[i] = this.in.readByte();
+					}
+					
+					boolean[] bitfield = convert(bitfieldBytes, Download.torrent.piece_hashes.length);
+					System.out.println("Total number of pieces: " + Download.torrent.piece_hashes.length);
+					int pieceCount = 0;
+					this.bitfield = bitfield;
+					for(int i = 0; i<this.bitfield.length; i++){
+						if(bitfield[i] == true){
+							pieceCount++;
+						}
+					}
+					System.out.println("This peer has " + pieceCount + " of them");
+					System.out.println();
+					out.write(interested);
+				}
+			}
+			System.out.println(in.available());
+			/*if(pieceDesired != -1 && !this.chokingUs){
+				int pieceNumber = 0;
+				int requestLength = 16384;
+				int left = Download.torrent.piece_length;
+				byte[] request = new byte[17];
+				
+				request[0] = 0;
+			    request[1] = 0;
+			    request[2] = 0;
+			    request[3] = 13;
+			    request[4] = 6;
+			    
+			    byte[] pNBytes = ByteBuffer.allocate(4).putInt(pieceNumber).array();
+			    //PieceNumberBytes
+			    byte[] offsetBytes, lengthBytes;
+			    request[5] = pNBytes[0]; request[6] = pNBytes[1]; request[7] = pNBytes[2]; request[8] = pNBytes[3];
+			    
+			    byte[] response = new byte[100]; //first subpiece
+				byte[] finalPiece = new byte[Download.torrent.piece_length];
+				
+				while(left > 0){
+					
+					if(left > 16384){
+						//make a request for a piece of length 16384
+						requestLength = 16384;
+					}else{
+						//make a request for a piece of length however many bytes are left
+						requestLength = left;
+					}
+					
+					offsetBytes = ByteBuffer.allocate(4).putInt(Download.torrent.piece_length - left).array();
+				    
+				    request[9] = offsetBytes[0]; request[10] = offsetBytes[1]; request[11] = offsetBytes[2]; request[12] = offsetBytes[3];
+				    
+				    lengthBytes = ByteBuffer.allocate(4).putInt(requestLength).array();
+				    
+				    request[13] = lengthBytes[0];
+				    request[14] = lengthBytes[1];
+				    request[15] = lengthBytes[2];
+				    request[16] = lengthBytes[3];
+				    
+				    this.out.write(request);
+				    this.out.flush();
+				  	Thread.sleep(2000);
+				  	
+				  	in.read(response, 0, 16384); // TODO: Make sure it is not a request message!
+				  	OurTools.printMessage(response);
+				  	
+				  	for(int i = 0; i < requestLength; i++){
+				  		finalPiece[Download.torrent.piece_length - left + i] = response[i + 13];
+				  	}
+				  	
+				    
+					left = left - 16384;
+					response = null;
+				}
+
+			}*/
+		}
+
+	    	  	
+	}
+	
+	public static boolean[] convert(byte[] bits, int significantBits) {
+		boolean[] retVal = new boolean[significantBits];
+		int boolIndex = 0;
+		for (int byteIndex = 0; byteIndex < bits.length; ++byteIndex) {
+			for (int bitIndex = 7; bitIndex >= 0; --bitIndex) {
+				if (boolIndex >= significantBits) {
+					// Bad to return within a loop, but it's the easiest way
+					return retVal;
+				}
+
+				retVal[boolIndex++] = (bits[byteIndex] >> bitIndex & 0x01) == 1 ? true
+						: false;
+			}
+		}
+		return retVal;
+	}
+	
+	/**
+	 * This method checks to see if the remote peer is choking the client. If this is happening,
+	 * the client cannot send a request message.
+	 * @return
+	 */
+
+	
+	/**
+	 * This method will send the request message(s). This will handle numerous cases. If the piece
+	 * we want to request has a size larger than 16384 bytes, it will split the piece into subpieces.
+	 * If it is less than 16384, we will only send one request message for that one piece. It has boolean
+	 * flags set to determine whether the piece is the lastPiece and whether piece needs to be split up into
+	 * subpieces. If subpieces are required, the request messages shall be sent separately and the byte arrays
+	 * that are returned from the remote peer will be appended to each other to create one large byte array
+	 * forming the original piece's byte array. This byte array is then returned by the method.
+	 * 
+	 * @param pieceNumber is used to determine the index of the request message
+	 * @return
+	 * @throws InterruptedException
+	 * @throws IOException
+	 */
+	public byte[] getPiece(int pieceNumber) throws InterruptedException, IOException{
+		int left = Download.torrent.piece_length;
+		int requestLength = 16384;
+		System.out.println("Left: " + left);
+		byte[] request = new byte[17];
+		int subPieceNo = 0;
+		
+		request[0] = 0;
+	    request[1] = 0;
+	    request[2] = 0;
+	    request[3] = 13;
+	    request[4] = 6;
+	    
+	    byte[] pNBytes = ByteBuffer.allocate(4).putInt(pieceNumber).array();
+	    //PieceNumberBytes
+	    byte[] offsetBytes, lengthBytes;
+	    request[5] = pNBytes[0]; request[6] = pNBytes[1]; request[7] = pNBytes[2]; request[8] = pNBytes[3];
+	    
+	    
+	    byte[][] response = new byte[requestLength + 13][(int) Math.ceil(left/requestLength)]; //first subpiece
+	    //byte[] response = new byte[requestLength + 13];
+		byte[] finalPiece = new byte[Download.torrent.piece_length];
+		
+		while(left > 0){
+			System.out.println("subpiece");
+			if(left > 16384){
+				//make a request for a piece of length 16384
+				requestLength = 16384;
+			}else{
+				//make a request for a piece of length however many bytes are left
+				requestLength = left;
+			}
+			
+			offsetBytes = ByteBuffer.allocate(4).putInt(Download.torrent.piece_length - left).array();
+		    
+		    request[9] = offsetBytes[0]; request[10] = offsetBytes[1]; request[11] = offsetBytes[2]; request[12] = offsetBytes[3];
+		    
+		    lengthBytes = ByteBuffer.allocate(4).putInt(requestLength).array();
+		    
+		    request[13] = lengthBytes[0];
+		    request[14] = lengthBytes[1];
+		    request[15] = lengthBytes[2];
+		    request[16] = lengthBytes[3];
+		    
+		    this.out.write(request);
+		    this.out.flush();
+		  	
+		  	System.out.println("length: " + this.in.readInt());
+		  	System.out.println("ID: " + this.in.readByte());
+		  	System.out.println("index: " + this.in.readInt());
+		  	System.out.println("begin: " + this.in.readInt());
+		  	//System.out.println("length: " + this.in.readInt());
+		  	//in.read(response);
+		  	
+		  	Thread.sleep(3000);
+		  	while(in.available() == 0){
+		  		this.in.readFully(response[subPieceNo], 0, requestLength + 13); // TODO: Make sure it is not a request message!
+		  	}
+		  	
+		  	Thread.sleep(1000);
+		  	OurTools.printMessage(response[subPieceNo]);
+		  	
+		  	System.out.println(new String(response[subPieceNo], "UTF-8"));
+		  	//System.out.println(response.toString());
+		  	for(int i = 0; i < requestLength; i++){
+		  		//System.out.println(Download.torrent.piece_length - left + i);
+		  		
+		  		//finalPiece[Download.torrent.piece_length - left + i] = response[i + 13];
+		  		finalPiece[Download.torrent.piece_length - left + i] = response[subPieceNo][i];
+		  	}
+		  	
+			left = left - 16384;
+			//response = null;
+		}
+	    
+		return finalPiece;
+		
+		/*int length = Download.torrent.piece_length;
+	    int short_length = length/2;
+	    int extra_length = 0;
+
+	    boolean lastPiece = false, needSubPieces = true;
+	    if (pieceNumber == Download.torrent.piece_hashes.length - 1){
+	    	
+	    	lastPiece = true;
+	    	int lengthOfLastPiece = Download.torrent.file_length - ((Download.torrent.piece_hashes.length - 1)*length);
+	    	
+	    	if(lengthOfLastPiece < 16384){
+	    		short_length = lengthOfLastPiece;
+	    		needSubPieces = false;
+	    	}else{
+	    		extra_length = lengthOfLastPiece - short_length;
+	    	}
+	    	
+	    }
+	    
+	    byte[] request = new byte[17];
+	    	    
+	    request[0] = 0;
+	    request[1] = 0;
+	    request[2] = 0;
+	    request[3] = 13;
+	    request[4] = 6;
+	    
+	    byte[] pNBytes = ByteBuffer.allocate(4).putInt(pieceNumber).array();
+	    //PieceNumberBytes
+	    
+	    request[5] = pNBytes[0]; request[6] = pNBytes[1]; request[7] = pNBytes[2]; request[8] = pNBytes[3];
+	    request[9] = 0; request[10] = 0; request[11] = 0; request[12] = 0;
+	    
+	    byte[] bytes = ByteBuffer.allocate(4).putInt(short_length).array();
+	    
+	    request[13] = bytes[0];
+	    request[14] = bytes[1];
+	    request[15] = bytes[2];
+	    request[16] = bytes[3];
+	    System.out.println();
+	  	
+	    this.out.write(request);
+	    this.out.flush();
+	  	Thread.sleep(1000);
+	  	
+	  	byte[] response = new byte[short_length + 13]; //first subpiece
+	  	
+	  	
+	  	in.read(response, 0, short_length+13); // TODO: Make sure it is not a request message!
+	  	
+	  	byte[] piece = new byte[short_length];
+	  	
+	  	for(int i = 0; i < short_length; i++){
+	  		piece[i] = response[i + 13];
+	  	}
+	  	
+	  	byte[] finalPiece = null;
+	  	if (needSubPieces){
+	  		
+		  	//REQUEST FOR SECOND SUBPIECE
+	  		if (!lastPiece){
+	  			request[9] = bytes[0]; request[10] = bytes[1]; request[11] = bytes[2]; request[12] = bytes[3];
+	  		}else{
+	  			byte[] extraBytes = ByteBuffer.allocate(4).putInt(extra_length).array();
+	  			byte[] offsetBytes = ByteBuffer.allocate(4).putInt(length/2).array();
+	  			//16384 goes into 9-12
+	  			request[9] = offsetBytes[0]; request[10] = offsetBytes[1]; request[11] = offsetBytes[2]; request[12] = offsetBytes[3];
+	  			request[13] = extraBytes[0]; request[14] = extraBytes[1]; request[15] = extraBytes[2]; request[16] = extraBytes[3];
+	  		}
+	  		
+		  	this.out.write(request);
+		  	this.out.flush();
+		  	Thread.sleep(5000);
+		  	//TODO: make sure it's a piece message as a response
+		  	if (!lastPiece){
+			  	byte[] response2 = new byte[short_length + 13]; //second subpiece
+			  	in.read(response2, 0, short_length+13);
+
+			  	byte[] piece2 = new byte[short_length];
+			  	for(int i = 0; i<short_length; i++){
+			  		piece2[i] = response2[i+13];
+			  	}
+			 
+			  	//appending piece2 byte array to piece1 byte array
+			  	finalPiece = new byte[piece.length + piece2.length];
+			  	System.arraycopy(piece, 0, finalPiece, 0, piece.length);
+			  	System.arraycopy(piece2, 0, finalPiece, piece.length, piece2.length);
+		  	} else{
+		  		byte[] response2 = new byte[extra_length + 13]; //second subpiece
+			  	in.read(response2, 0, extra_length+13);
+
+			  	byte[] piece2 = new byte[extra_length];
+			  	for(int i = 0; i<extra_length; i++){
+			  		piece2[i] = response2[i+13];
+			  	}
+			  	
+			  	//appending piece2 byte array to piece1 byte array
+			  	finalPiece = new byte[piece.length + piece2.length];
+			  	System.arraycopy(piece, 0, finalPiece, 0, piece.length);
+			  	System.arraycopy(piece2, 0, finalPiece, piece.length, piece2.length);
+		  	}
+		  	
+	  	}
+
+		if (needSubPieces){
+			return finalPiece;
+		}else{
+			return piece;
+		}*/
+		
+	}
+	
+	/**
+	 * This method shall close all the streams (DataInputStream, DataOutputStream) and it
+	 * will close the socket as well.
+	 */
+	void disconnect(){
+		try {
+			in.close();
+			out.close();
+			socket.close();
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+};
